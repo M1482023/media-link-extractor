@@ -68,13 +68,16 @@ Actor.main(async () => {
         const url = response.url();
         const contentType = response.headers()['content-type'] || '';
 
-        // Check if this is a media file
-        if (url.match(/\.(mp4|webm|m3u8|mov|avi|flv|mkv|mp3|wav|ogg)/i) ||
+        // Check if this is a media file - more comprehensive patterns
+        if (url.match(/\.(mp4|webm|m3u8|mov|avi|flv|mkv|mp3|wav|ogg|ts|f4v)/i) ||
             contentType.includes('video') ||
             contentType.includes('audio') ||
             url.includes('stream') ||
             url.includes('hls') ||
-            url.includes('video')) {
+            url.includes('video') ||
+            url.includes('media') ||
+            url.includes('cdn') ||
+            url.includes('vod')) {
             networkRequests.push({
                 type: 'network-request',
                 url: url,
@@ -84,19 +87,60 @@ Actor.main(async () => {
         }
     });
 
+    // Also intercept requests to see what's being requested
+    page.on('request', request => {
+        const url = request.url();
+        if (url.match(/\.(mp4|webm|m3u8|mov|avi|flv|mkv|mp3|wav|ogg|ts|f4v)/i) ||
+            url.includes('stream') ||
+            url.includes('hls') ||
+            url.includes('video') ||
+            url.includes('media')) {
+            if (!networkRequests.find(req => req.url === url)) {
+                networkRequests.push({
+                    type: 'network-request',
+                    url: url,
+                    contentType: 'unknown',
+                    method: 'network-request-interception'
+                });
+            }
+        }
+    });
+
     try {
         log.info(`📄 Navigating to: ${url}`);
-        await page.goto(url, { 
+        await page.goto(url, {
             waitUntil: 'networkidle',
             timeout: timeout * 1000
         });
+
+        // Wait additional time for dynamic content to load
+        log.info(`⏳ Waiting for dynamic content to load...`);
+        await page.waitForTimeout(5000);
+
+        // Try to scroll down to trigger lazy loading
+        log.info(`📜 Scrolling page to trigger lazy loading...`);
+        await page.evaluate(() => {
+            window.scrollTo(0, document.body.scrollHeight / 2);
+        });
+        await page.waitForTimeout(2000);
+
+        await page.evaluate(() => {
+            window.scrollTo(0, document.body.scrollHeight);
+        });
+        await page.waitForTimeout(2000);
+
+        // Scroll back to top
+        await page.evaluate(() => {
+            window.scrollTo(0, 0);
+        });
+        await page.waitForTimeout(2000);
 
         // Wait for video elements if requested
         if (waitForVideo) {
             log.info(`⏳ Waiting for video elements to load...`);
             try {
-                await page.waitForSelector('video, source, iframe, .video-player, .player-container', {
-                    timeout: 15000
+                await page.waitForSelector('video, source, iframe, .video-player, .player-container, .video-wrapper, .media-player', {
+                    timeout: 20000
                 });
                 log.info(`✅ Video elements found`);
             } catch (error) {

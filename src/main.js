@@ -161,7 +161,10 @@ Actor.main(async () => {
         }
 
         // Extract media links using JavaScript in the browser
-        const mediaLinks = await page.evaluate(() => {
+        const currentUrl = page.url();
+        const isMakoSite = currentUrl.includes('mako.co.il');
+
+        const mediaLinks = await page.evaluate((isMakoSite) => {
             const links = [];
 
             // Get all video elements
@@ -201,7 +204,7 @@ Actor.main(async () => {
             const allElements = document.querySelectorAll('*');
             allElements.forEach(element => {
                 // Check data attributes
-                ['data-src', 'data-url', 'data-video-url', 'data-media-url', 'data-hls-url', 'data-stream-url'].forEach(attr => {
+                ['data-src', 'data-url', 'data-video-url', 'data-media-url', 'data-hls-url', 'data-stream-url', 'data-file', 'data-video-file'].forEach(attr => {
                     const value = element.getAttribute(attr);
                     if (value && (value.includes('.mp4') || value.includes('.webm') || value.includes('.m3u8') || value.includes('stream') || value.includes('video'))) {
                         links.push({ type: 'data-attribute', url: value, method: attr });
@@ -209,14 +212,14 @@ Actor.main(async () => {
                 });
             });
 
-            // Look for video URLs in scripts (potential JSON data)
+            // Look for video URLs in scripts (potential JSON data) - Enhanced patterns
             const scripts = document.querySelectorAll('script');
             scripts.forEach(script => {
                 const content = script.textContent;
                 if (content) {
-                    // Match common video URL patterns - more aggressive
+                    // Match common video URL patterns - more aggressive with specific keys
                     const patterns = [
-                        /https?:\/\/[^"'\s]+\.(mp4|webm|m3u8|mov|avi|flv|mkv)/gi,
+                        /https?:\/\/[^"'\s]+\.(mp4|webm|m3u8|mov|avi|flv|mkv|wmv|f4v)/gi,
                         /https?:\/\/[^"'\s]+\/video\/[^"'\s]+/gi,
                         /https?:\/\/[^"'\s]+\/stream\/[^"'\s]+/gi,
                         /https?:\/\/[^"'\s]+\/media\/[^"'\s]+/gi,
@@ -224,7 +227,14 @@ Actor.main(async () => {
                         /https?:\/\/[^"'\s]+\.m3u8[^"'\s]*/gi,
                         /"url":\s*"([^"]+)"/gi,
                         /"videoUrl":\s*"([^"]+)"/gi,
-                        /"src":\s*"([^"]+\.(mp4|webm|m3u8)[^"]*)"/gi
+                        /"src":\s*"([^"]+\.(mp4|webm|m3u8)[^"]*)"/gi,
+                        /"file":\s*"([^"]+\.(mp4|webm|m3u8)[^"]*)"/gi,
+                        /"mp4":\s*"([^"]+)"/gi,
+                        /"hls":\s*"([^"]+)"/gi,
+                        /"video_file":\s*"([^"]+)"/gi,
+                        /"videoSrc":\s*"([^"]+)"/gi,
+                        /url\s*=\s*['"]([^'"]+\.(mp4|webm|m3u8)[^'"]*)['"]/gi,
+                        /file\s*=\s*['"]([^'"]+\.(mp4|webm|m3u8)[^'"]*)['"]/gi,
                     ];
 
                     patterns.forEach(pattern => {
@@ -234,7 +244,7 @@ Actor.main(async () => {
                                 // Clean up the URL if it's in JSON format
                                 let cleanUrl = url;
                                 if (url.includes('"')) {
-                                    cleanUrl = url.replace(/"/g, '').replace(/url:/g, '').replace(/videoUrl:/g, '').replace(/src:/g, '').trim();
+                                    cleanUrl = url.replace(/"/g, '').replace(/url:/g, '').replace(/videoUrl:/g, '').replace(/src:/g, '').replace(/file:/g, '').replace(/mp4:/g, '').replace(/hls:/g, '').replace(/video_file:/g, '').replace(/videoSrc:/g, '').trim();
                                 }
                                 if (!links.find(l => l.url === cleanUrl) && cleanUrl.startsWith('http')) {
                                     links.push({ type: 'script-embedded', url: cleanUrl, method: 'regex-pattern' });
@@ -245,27 +255,92 @@ Actor.main(async () => {
                 }
             });
 
-            // Also check window object for video configurations
-            if (window.videoConfig || window.playerConfig || window.mediaConfig) {
-                const config = window.videoConfig || window.playerConfig || window.mediaConfig;
-                try {
-                    const configStr = JSON.stringify(config);
-                    const urlPatterns = /https?:\/\/[^"'\s]+\.(mp4|webm|m3u8|mov|avi)/gi;
-                    const urls = configStr.match(urlPatterns);
-                    if (urls) {
-                        urls.forEach(url => {
-                            if (!links.find(l => l.url === url)) {
-                                links.push({ type: 'window-config', url, method: 'window-object' });
+            // Also check window object for video configurations - More comprehensive
+            const windowProps = ['videoConfig', 'playerConfig', 'mediaConfig', 'videoData', 'playerData', 'mediaData', 'appConfig', 'playerOptions', 'videoOptions'];
+            windowProps.forEach(prop => {
+                if (window[prop]) {
+                    try {
+                        const configStr = JSON.stringify(window[prop]);
+                        const urlPatterns = /https?:\/\/[^"'\s]+\.(mp4|webm|m3u8|mov|avi|flv|mkv|wmv)/gi;
+                        const urls = configStr.match(urlPatterns);
+                        if (urls) {
+                            urls.forEach(url => {
+                                if (!links.find(l => l.url === url)) {
+                                    links.push({ type: 'window-config', url, method: `window.${prop}` });
+                                }
+                            });
+                        }
+                    } catch (e) {
+                        // JSON stringify failed, skip
+                    }
+                }
+            });
+
+            // Check for meta tags with video info
+            const metaTags = document.querySelectorAll('meta[property], meta[name]');
+            metaTags.forEach(meta => {
+                const property = meta.getAttribute('property') || meta.getAttribute('name');
+                const content = meta.getAttribute('content');
+                if (content && (property === 'og:video' || property === 'og:video:url' || property === 'og:video:secure_url' || property === 'video' || property === 'twitter:player')) {
+                    if (content.startsWith('http')) {
+                        links.push({ type: 'meta-tag', url: content, method: property });
+                    }
+                }
+            });
+
+            // Check for link tags with video
+            const linkTags = document.querySelectorAll('link');
+            linkTags.forEach(link => {
+                const rel = link.getAttribute('rel');
+                const href = link.getAttribute('href');
+                if (href && (rel === 'video_src' || rel === 'canonical' || rel === 'alternate')) {
+                    if (href.match(/\.(mp4|webm|m3u8|mov|avi)/i)) {
+                        links.push({ type: 'link-tag', url: href, method: rel });
+                    }
+                }
+            });
+
+            // Special handling for Israeli sites like mako.co.il
+            if (isMakoSite) {
+                // Try to find mako-specific video patterns
+                const makoPatterns = [
+                    /https?:\/\/[^"'\s]+keshet[^"'\s]+/gi,
+                    /https?:\/\/[^"'\s]+mako[^"'\s]+/gi,
+                    /https?:\/\/[^"'\s]+vod[^"'\s]+/gi,
+                ];
+
+                // Search entire page content for mako-specific patterns
+                const pageContent = document.documentElement.outerHTML;
+                makoPatterns.forEach(pattern => {
+                    const matches = pageContent.match(pattern);
+                    if (matches) {
+                        matches.forEach(url => {
+                            if (!links.find(l => l.url === url) && url.includes('http')) {
+                                links.push({ type: 'mako-specific', url, method: 'mako-pattern' });
                             }
                         });
                     }
-                } catch (e) {
-                    // JSON stringify failed, skip
-                }
+                });
+
+                // Try to click on video elements to trigger loading
+                const videoButtons = document.querySelectorAll('.play-button, .video-play, [class*="play"], [class*="video"]');
+                videoButtons.forEach(button => {
+                    try {
+                        button.click();
+                    } catch (e) {
+                        // Click failed, continue
+                    }
+                });
             }
 
             return links;
-        });
+        }, isMakoSite);
+
+        // Wait additional time after JavaScript execution for any lazy-loaded content
+        if (isMakoSite) {
+            log.info(`🎬 Mako site detected, waiting for additional video loading...`);
+            await page.waitForTimeout(5000);
+        }
 
         log.info(`🔍 Found ${mediaLinks.length} media links`);
         log.info(`🌐 Captured ${networkRequests.length} network requests`);

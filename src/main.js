@@ -312,27 +312,35 @@ Actor.main(async () => {
                 ];
 
                 // Search entire page content for mako-specific patterns
-                const pageContent = document.documentElement.outerHTML;
-                makoPatterns.forEach(pattern => {
-                    const matches = pageContent.match(pattern);
-                    if (matches) {
-                        matches.forEach(url => {
-                            if (!links.find(l => l.url === url) && url.includes('http')) {
-                                links.push({ type: 'mako-specific', url, method: 'mako-pattern' });
-                            }
-                        });
-                    }
-                });
+                try {
+                    const pageContent = document.documentElement ? document.documentElement.outerHTML : document.body.innerHTML;
+                    makoPatterns.forEach(pattern => {
+                        const matches = pageContent.match(pattern);
+                        if (matches) {
+                            matches.forEach(url => {
+                                if (!links.find(l => l.url === url) && url.includes('http')) {
+                                    links.push({ type: 'mako-specific', url, method: 'mako-pattern' });
+                                }
+                            });
+                        }
+                    });
+                } catch (e) {
+                    // Failed to get page content, continue with other methods
+                }
 
                 // Try to click on video elements to trigger loading
-                const videoButtons = document.querySelectorAll('.play-button, .video-play, [class*="play"], [class*="video"]');
-                videoButtons.forEach(button => {
-                    try {
-                        button.click();
-                    } catch (e) {
-                        // Click failed, continue
-                    }
-                });
+                try {
+                    const videoButtons = document.querySelectorAll('.play-button, .video-play, [class*="play"], [class*="video"]');
+                    videoButtons.forEach(button => {
+                        try {
+                            button.click();
+                        } catch (e) {
+                            // Click failed, continue
+                        }
+                    });
+                } catch (e) {
+                    // Query selector failed, continue
+                }
             }
 
             return links;

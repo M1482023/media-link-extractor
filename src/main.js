@@ -164,6 +164,8 @@ Actor.main(async () => {
         const currentUrl = page.url();
         const isMakoSite = currentUrl.includes('mako.co.il');
 
+        log.info(`🎯 Site analysis: ${isMakoSite ? 'Mako site detected' : 'Generic site'}`);
+
         const mediaLinks = await page.evaluate((isMakoSite) => {
             const links = [];
 

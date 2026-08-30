@@ -62,6 +62,28 @@ Actor.main(async () => {
 
     const page = await context.newPage();
 
+    // Network interception to capture media requests (like F12 Network tab)
+    const networkRequests = [];
+    page.on('response', async (response) => {
+        const url = response.url();
+        const contentType = response.headers()['content-type'] || '';
+
+        // Check if this is a media file
+        if (url.match(/\.(mp4|webm|m3u8|mov|avi|flv|mkv|mp3|wav|ogg)/i) ||
+            contentType.includes('video') ||
+            contentType.includes('audio') ||
+            url.includes('stream') ||
+            url.includes('hls') ||
+            url.includes('video')) {
+            networkRequests.push({
+                type: 'network-request',
+                url: url,
+                contentType: contentType,
+                method: 'network-interception'
+            });
+        }
+    });
+
     try {
         log.info(`📄 Navigating to: ${url}`);
         await page.goto(url, { 
@@ -73,12 +95,12 @@ Actor.main(async () => {
         if (waitForVideo) {
             log.info(`⏳ Waiting for video elements to load...`);
             try {
-                await page.waitForSelector('video, source, iframe', { 
-                    timeout: 10000 
+                await page.waitForSelector('video, source, iframe, .video-player, .player-container', {
+                    timeout: 15000
                 });
                 log.info(`✅ Video elements found`);
             } catch (error) {
-                log.warning(`No video elements found within timeout`);
+                log.warning(`No video elements found within timeout, will try alternative methods`);
             }
         }
 
@@ -91,7 +113,7 @@ Actor.main(async () => {
             videos.forEach((video, index) => {
                 if (video.src) links.push({ type: 'video', url: video.src, method: 'video.src' });
                 if (video.currentSrc) links.push({ type: 'video', url: video.currentSrc, method: 'video.currentSrc' });
-                
+
                 // Check for source children
                 const sources = video.querySelectorAll('source');
                 sources.forEach(source => {
@@ -123,9 +145,9 @@ Actor.main(async () => {
             const allElements = document.querySelectorAll('*');
             allElements.forEach(element => {
                 // Check data attributes
-                ['data-src', 'data-url', 'data-video-url', 'data-media-url'].forEach(attr => {
+                ['data-src', 'data-url', 'data-video-url', 'data-media-url', 'data-hls-url', 'data-stream-url'].forEach(attr => {
                     const value = element.getAttribute(attr);
-                    if (value && (value.includes('.mp4') || value.includes('.webm') || value.includes('.m3u8'))) {
+                    if (value && (value.includes('.mp4') || value.includes('.webm') || value.includes('.m3u8') || value.includes('stream') || value.includes('video'))) {
                         links.push({ type: 'data-attribute', url: value, method: attr });
                     }
                 });
@@ -136,19 +158,30 @@ Actor.main(async () => {
             scripts.forEach(script => {
                 const content = script.textContent;
                 if (content) {
-                    // Match common video URL patterns
+                    // Match common video URL patterns - more aggressive
                     const patterns = [
-                        /https?:\/\/[^"'\s]+\.(mp4|webm|m3u8|mov|avi)/gi,
+                        /https?:\/\/[^"'\s]+\.(mp4|webm|m3u8|mov|avi|flv|mkv)/gi,
                         /https?:\/\/[^"'\s]+\/video\/[^"'\s]+/gi,
-                        /https?:\/\/[^"'\s]+\/stream\/[^"'\s]+/gi
+                        /https?:\/\/[^"'\s]+\/stream\/[^"'\s]+/gi,
+                        /https?:\/\/[^"'\s]+\/media\/[^"'\s]+/gi,
+                        /https?:\/\/[^"'\s]+\/hls\/[^"'\s]+/gi,
+                        /https?:\/\/[^"'\s]+\.m3u8[^"'\s]*/gi,
+                        /"url":\s*"([^"]+)"/gi,
+                        /"videoUrl":\s*"([^"]+)"/gi,
+                        /"src":\s*"([^"]+\.(mp4|webm|m3u8)[^"]*)"/gi
                     ];
-                    
+
                     patterns.forEach(pattern => {
                         const matches = content.match(pattern);
                         if (matches) {
                             matches.forEach(url => {
-                                if (!links.find(l => l.url === url)) {
-                                    links.push({ type: 'script-embedded', url, method: 'regex-pattern' });
+                                // Clean up the URL if it's in JSON format
+                                let cleanUrl = url;
+                                if (url.includes('"')) {
+                                    cleanUrl = url.replace(/"/g, '').replace(/url:/g, '').replace(/videoUrl:/g, '').replace(/src:/g, '').trim();
+                                }
+                                if (!links.find(l => l.url === cleanUrl) && cleanUrl.startsWith('http')) {
+                                    links.push({ type: 'script-embedded', url: cleanUrl, method: 'regex-pattern' });
                                 }
                             });
                         }
@@ -156,13 +189,36 @@ Actor.main(async () => {
                 }
             });
 
+            // Also check window object for video configurations
+            if (window.videoConfig || window.playerConfig || window.mediaConfig) {
+                const config = window.videoConfig || window.playerConfig || window.mediaConfig;
+                try {
+                    const configStr = JSON.stringify(config);
+                    const urlPatterns = /https?:\/\/[^"'\s]+\.(mp4|webm|m3u8|mov|avi)/gi;
+                    const urls = configStr.match(urlPatterns);
+                    if (urls) {
+                        urls.forEach(url => {
+                            if (!links.find(l => l.url === url)) {
+                                links.push({ type: 'window-config', url, method: 'window-object' });
+                            }
+                        });
+                    }
+                } catch (e) {
+                    // JSON stringify failed, skip
+                }
+            }
+
             return links;
         });
 
         log.info(`🔍 Found ${mediaLinks.length} media links`);
+        log.info(`🌐 Captured ${networkRequests.length} network requests`);
+
+        // Combine media links and network requests
+        const allLinks = [...mediaLinks, ...networkRequests];
 
         // Filter and deduplicate links
-        const uniqueLinks = mediaLinks.filter((link, index, self) =>
+        const uniqueLinks = allLinks.filter((link, index, self) =>
             index === self.findIndex(l => l.url === link.url)
         );
 

@@ -187,12 +187,17 @@ Actor.main(async () => {
                 });
             });
 
-            observer.observe(document.body || document.documentElement, {
-                childList: true,
-                subtree: true
-            });
-
-            window.mutationObserver = observer;
+            // Find a valid target node for the observer
+            const targetNode = document.body || document.documentElement || document;
+            if (targetNode && typeof targetNode.addEventListener === 'function') {
+                observer.observe(targetNode, {
+                    childList: true,
+                    subtree: true
+                });
+                window.mutationObserver = observer;
+            } else {
+                console.warn('Could not find valid target for MutationObserver');
+            }
         });
 
         // Try to click on play buttons to trigger video loading

@@ -69,7 +69,7 @@ Actor.main(async () => {
         const contentType = response.headers()['content-type'] || '';
 
         // Check if this is a media file - more comprehensive patterns
-        if (url.match(/\.(mp4|webm|m3u8|mov|avi|flv|mkv|mp3|wav|ogg|ts|f4v)/i) ||
+        if (url.match(/\.(mp4|webm|m3u8|mov|avi|flv|mkv|mp3|wav|ogg|ts|f4v|mpd)/i) ||
             contentType.includes('video') ||
             contentType.includes('audio') ||
             url.includes('stream') ||
@@ -77,7 +77,8 @@ Actor.main(async () => {
             url.includes('video') ||
             url.includes('media') ||
             url.includes('cdn') ||
-            url.includes('vod')) {
+            url.includes('vod') ||
+            url.includes('dash')) {
             networkRequests.push({
                 type: 'network-request',
                 url: url,
@@ -90,11 +91,12 @@ Actor.main(async () => {
     // Also intercept requests to see what's being requested
     page.on('request', request => {
         const url = request.url();
-        if (url.match(/\.(mp4|webm|m3u8|mov|avi|flv|mkv|mp3|wav|ogg|ts|f4v)/i) ||
+        if (url.match(/\.(mp4|webm|m3u8|mov|avi|flv|mkv|mp3|wav|ogg|ts|f4v|mpd)/i) ||
             url.includes('stream') ||
             url.includes('hls') ||
             url.includes('video') ||
-            url.includes('media')) {
+            url.includes('media') ||
+            url.includes('dash')) {
             if (!networkRequests.find(req => req.url === url)) {
                 networkRequests.push({
                     type: 'network-request',
@@ -146,6 +148,98 @@ Actor.main(async () => {
         } catch (error) {
             log.warning(`Scrolling failed: ${error.message}, continuing with extraction`);
         }
+
+        // Set up MutationObserver to watch for dynamically added content
+        log.info(`👁️ Setting up MutationObserver for dynamic content...`);
+        await page.evaluate(() => {
+            window.foundVideos = [];
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    mutation.addedNodes.forEach((node) => {
+                        if (node.nodeType === 1) { // Element node
+                            // Check for video elements
+                            const videos = node.querySelectorAll ? node.querySelectorAll('video, source, iframe') : [];
+                            videos.forEach(video => {
+                                if (video.src || video.currentSrc) {
+                                    window.foundVideos.push({
+                                        type: 'mutation-observer',
+                                        url: video.src || video.currentSrc,
+                                        method: 'dynamic-content'
+                                    });
+                                }
+                            });
+
+                            // Check for video in attributes
+                            if (node.getAttribute) {
+                                ['data-src', 'data-url', 'data-video-url', 'data-media-url'].forEach(attr => {
+                                    const value = node.getAttribute(attr);
+                                    if (value && (value.includes('.mp4') || value.includes('.m3u8') || value.includes('video'))) {
+                                        window.foundVideos.push({
+                                            type: 'mutation-observer',
+                                            url: value,
+                                            method: attr
+                                        });
+                                    }
+                                });
+                            }
+                        }
+                    });
+                });
+            });
+
+            observer.observe(document.body || document.documentElement, {
+                childList: true,
+                subtree: true
+            });
+
+            window.mutationObserver = observer;
+        });
+
+        // Try to click on play buttons to trigger video loading
+        log.info(`🖱️ Attempting to click on play buttons...`);
+        await page.evaluate(() => {
+            const playSelectors = [
+                '.play-button',
+                '.video-play',
+                '[class*="play"]',
+                '[class*="video"]',
+                '[class*="player"]',
+                'button[aria-label*="play"]',
+                'button[aria-label*="video"]',
+                '.video-player button',
+                '.player-container button',
+                '[data-play]',
+                '[onclick*="play"]'
+            ];
+
+            playSelectors.forEach(selector => {
+                try {
+                    const buttons = document.querySelectorAll(selector);
+                    buttons.forEach(button => {
+                        try {
+                            button.click();
+                        } catch (e) {
+                            // Click failed, continue
+                        }
+                    });
+                } catch (e) {
+                    // Query selector failed, continue
+                }
+            });
+        });
+
+        // Wait for MutationObserver to catch dynamic content
+        await page.waitForTimeout(5000);
+
+        // Get results from MutationObserver
+        const mutationResults = await page.evaluate(() => {
+            if (window.mutationObserver) {
+                window.mutationObserver.disconnect();
+            }
+            return window.foundVideos || [];
+        });
+
+        log.info(`👁️ MutationObserver found ${mutationResults.length} dynamic videos`);
 
         // Wait for video elements if requested
         if (waitForVideo) {
@@ -355,8 +449,8 @@ Actor.main(async () => {
         log.info(`🔍 Found ${mediaLinks.length} media links`);
         log.info(`🌐 Captured ${networkRequests.length} network requests`);
 
-        // Combine media links and network requests
-        const allLinks = [...mediaLinks, ...networkRequests];
+        // Combine media links, network requests, and mutation results
+        const allLinks = [...mediaLinks, ...networkRequests, ...mutationResults];
 
         // Filter and deduplicate links
         const uniqueLinks = allLinks.filter((link, index, self) =>

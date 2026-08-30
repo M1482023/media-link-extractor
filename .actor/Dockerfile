@@ -1,5 +1,5 @@
 # Actor Dockerfile for Media Link Extractor
-FROM apify/actor-node-playwright-chrome:v0.0.1
+FROM apify/actor-node-playwright-chrome:latest
 
 # Copy package.json and package-lock.json
 COPY package*.json ./

@@ -40,7 +40,7 @@ Actor.main(async () => {
 
     let proxyServer = null;
     if (proxyConfigObj) {
-        const proxyInfo = proxyConfigObj.newUrl();
+        const proxyInfo = await proxyConfigObj.newUrl();
         proxyServer = proxyInfo;
         log.info(`🔧 Using proxy: ${proxyServer}`);
         browserOptions.proxy = { server: proxyServer };

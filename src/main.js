@@ -1,8 +1,6 @@
 import { Actor } from 'apify';
 import { chromium } from 'playwright';
 
-const { log } = Actor;
-
 /**
  * Media Link Extractor Actor
  * Uses virtual browser to extract media links from any website
@@ -12,6 +10,7 @@ const { log } = Actor;
 Actor.main(async () => {
     await Actor.init();
 
+    const log = Actor.log;
     const input = await Actor.getInput();
     const {
         url,

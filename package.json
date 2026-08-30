@@ -1,0 +1,15 @@
+{
+  "name": "media-link-extractor",
+  "version": "0.0.1",
+  "description": "Apify Actor that uses virtual browser to extract media links from any website",
+  "type": "module",
+  "scripts": {
+    "start": "node src/main.js"
+  },
+  "dependencies": {
+    "apify": "^3.0.0",
+    "playwright": "^1.40.0"
+  },
+  "author": "",
+  "license": "ISC"
+}

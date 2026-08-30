@@ -1,0 +1,10 @@
+{
+  "actorSpecification": 1,
+  "name": "media-link-extractor",
+  "title": "Media Link Extractor",
+  "description": "Apify Actor that uses virtual browser to extract media links from any website - simulates pressing F12 to find video URLs",
+  "version": "0.0.1",
+  "buildTag": "latest",
+  "environmentVariables": {},
+  "dockerfile": ".actor/Dockerfile"
+}

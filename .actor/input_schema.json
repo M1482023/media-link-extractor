@@ -1,0 +1,43 @@
+{
+  "title": "Media Link Extractor Input",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "url": {
+      "title": "Video URL",
+      "type": "string",
+      "description": "The URL of the video page to extract media links from (works with any website)",
+      "prefill": "",
+      "editor": "textfield"
+    },
+    "cookies": {
+      "title": "Cookies",
+      "type": "string",
+      "description": "Cookies in Netscape format for authentication (optional)",
+      "prefill": "",
+      "editor": "textarea"
+    },
+    "proxyConfiguration": {
+      "title": "Proxy configuration",
+      "type": "object",
+      "description": "Select proxies to be used by the browser",
+      "prefill": { "useApifyProxy": false },
+      "editor": "proxy"
+    },
+    "waitForVideo": {
+      "title": "Wait for video to load",
+      "type": "boolean",
+      "description": "Wait for video element to be fully loaded before extracting",
+      "default": true,
+      "editor": "checkbox"
+    },
+    "timeout": {
+      "title": "Timeout (seconds)",
+      "type": "integer",
+      "description": "Maximum time to wait for page load",
+      "default": 30,
+      "editor": "number"
+    }
+  },
+  "required": ["url"]
+}

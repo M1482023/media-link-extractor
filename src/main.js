@@ -119,21 +119,33 @@ Actor.main(async () => {
 
         // Try to scroll down to trigger lazy loading
         log.info(`📜 Scrolling page to trigger lazy loading...`);
-        await page.evaluate(() => {
-            window.scrollTo(0, document.body.scrollHeight / 2);
-        });
-        await page.waitForTimeout(2000);
+        try {
+            await page.evaluate(() => {
+                if (document.body) {
+                    window.scrollTo(0, document.body.scrollHeight / 2);
+                } else {
+                    window.scrollTo(0, 500);
+                }
+            });
+            await page.waitForTimeout(2000);
 
-        await page.evaluate(() => {
-            window.scrollTo(0, document.body.scrollHeight);
-        });
-        await page.waitForTimeout(2000);
+            await page.evaluate(() => {
+                if (document.body) {
+                    window.scrollTo(0, document.body.scrollHeight);
+                } else {
+                    window.scrollTo(0, 1000);
+                }
+            });
+            await page.waitForTimeout(2000);
 
-        // Scroll back to top
-        await page.evaluate(() => {
-            window.scrollTo(0, 0);
-        });
-        await page.waitForTimeout(2000);
+            // Scroll back to top
+            await page.evaluate(() => {
+                window.scrollTo(0, 0);
+            });
+            await page.waitForTimeout(2000);
+        } catch (error) {
+            log.warning(`Scrolling failed: ${error.message}, continuing with extraction`);
+        }
 
         // Wait for video elements if requested
         if (waitForVideo) {

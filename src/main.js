@@ -1,4 +1,4 @@
-import { Actor } from 'apify';
+import { Actor, log } from 'apify';
 import { chromium } from 'playwright';
 
 /**
@@ -10,7 +10,6 @@ import { chromium } from 'playwright';
 Actor.main(async () => {
     await Actor.init();
 
-    const log = Actor.log;
     const input = await Actor.getInput();
     const {
         url,
